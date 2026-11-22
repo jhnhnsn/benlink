@@ -172,9 +172,9 @@ def body_disc(m: Message, n: int):
                     out = EventNotificationBody
                 case BasicCommand.REGISTER_NOTIFICATION:
                     if m.is_reply:
-                        raise ValueError(
-                            "RegisterNotification cannot be a reply"
-                        )
+                        # Newer firmware (e.g. UV-Pro 0.9.3) replies to some
+                        # registrations; the reply format is undocumented.
+                        return bf_bytes(n // 8)
                     out = RegisterNotificationBody
                 case BasicCommand.HT_SEND_DATA:
                     out = HTSendDataReplyBody if m.is_reply else HTSendDataBody
