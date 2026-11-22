@@ -262,7 +262,8 @@ def command_message_to_protocol(m: CommandMessage) -> p.Message:
                 is_reply=False,
                 command=p.BasicCommand.REGISTER_NOTIFICATION,
                 body=p.RegisterNotificationBody(
-                    event_type=p.EventType[event_type],
+                    # The high-level name is POSITION_CHANGED; the protocol enum says POSITION_CHANGE.
+                    event_type=p.EventType["POSITION_CHANGE" if event_type == "POSITION_CHANGED" else event_type],
                 )
             )
         case SendTncDataFragment(tnc_data_fragment):
@@ -759,7 +760,7 @@ EventType = t.Literal[
     "RESTORE_FACTORY_SETTINGS",
     "HT_CH_CHANGED",
     "HT_SETTINGS_CHANGED",
-    "RINGING_STOPPED"
+    "RINGING_STOPPED",
     "RADIO_STATUS_CHANGED",
     "USER_ACTION",
     "SYSTEM_EVENT",

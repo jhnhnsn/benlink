@@ -149,7 +149,7 @@ from __future__ import annotations
 from typing_extensions import Unpack
 from dataclasses import dataclass
 import typing as t
-import sys
+import logging
 
 from .command import (
     CommandConnection,
@@ -172,6 +172,8 @@ from .command import (
     Status,
     Position,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -364,10 +366,7 @@ class RadioController:
             case StatusChangedEvent(status):
                 self._state.status = status
             case UnknownProtocolMessage(message):
-                print(
-                    f"[DEBUG] Unknown protocol message: {message}",
-                    file=sys.stderr
-                )
+                logger.debug("unknown protocol message: %s", message)
 
     # Async Context Manager
     async def __aenter__(self):
