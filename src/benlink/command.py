@@ -50,13 +50,18 @@ RADIO_INDICATE_UUID = "00001102-d102-11e1-9b23-00025b00a5a5"
 """@private"""
 
 
+DEFAULT_REPLY_TIMEOUT = 10.0
+"""Seconds to wait for a reply before raising TimeoutError."""
+
+
 class CommandConnection:
     _link: CommandLink
     _handlers: t.List[RadioMessageHandler] = []
 
-    def __init__(self, link: CommandLink):
+    def __init__(self, link: CommandLink, reply_timeout: float | None = DEFAULT_REPLY_TIMEOUT):
         self._link = link
         self._handlers = []
+        self._reply_timeout = reply_timeout
 
     @classmethod
     def new_ble(cls, device_uuid: str) -> CommandConnection:
@@ -98,13 +103,13 @@ class CommandConnection:
 
         remove_handler = self._add_message_handler(reply_handler)
 
-        await self.send_message(command)
-
-        out = await queue.get()
-
-        remove_handler()
-
-        return out
+        try:
+            await self.send_message(command)
+            # A reply that never arrives (radio busy, or a reply that failed to
+            # decode) must not hang the caller forever.
+            return await asyncio.wait_for(queue.get(), self._reply_timeout)
+        finally:
+            remove_handler()
 
     def add_event_handler(self, handler: EventHandler) -> t.Callable[[], None]:
         def event_handler(msg: RadioMessage):

@@ -2,10 +2,13 @@ from __future__ import annotations
 import typing as t
 import socket
 import asyncio
+import logging
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from . import protocol as p
 from .protocol.command.bitfield import BitStream
+
+logger = logging.getLogger(__name__)
 
 ##################################################
 # CommandLink
@@ -58,7 +61,12 @@ class BleCommandLink:
 
         def on_data(characteristic: BleakGATTCharacteristic, data: bytearray) -> None:
             assert characteristic.uuid == RADIO_INDICATE_UUID
-            callback(p.Message.from_bytes(data))
+            try:
+                msg = p.Message.from_bytes(data)
+            except Exception as e:  # unknown or newer-firmware message layout
+                logger.warning("dropping undecodable message %s: %s", bytes(data).hex(), e)
+                return
+            callback(msg)
 
         await self._client.start_notify(RADIO_INDICATE_UUID, on_data)
 
@@ -111,7 +119,12 @@ class RfcommCommandLink:
             )
 
             for gaia_frame in gaia_frames:
-                callback(p.Message.from_bytes(gaia_frame.data))
+                try:
+                    msg = p.Message.from_bytes(gaia_frame.data)
+                except Exception as e:  # unknown or newer-firmware message layout
+                    logger.warning("dropping undecodable message %s: %s", gaia_frame.data.hex(), e)
+                    continue
+                callback(msg)
 
         await self._client.connect(on_data)
 
