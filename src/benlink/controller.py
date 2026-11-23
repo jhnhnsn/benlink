@@ -306,6 +306,16 @@ class RadioController:
         state.status = await self._conn.get_status()
         return state.status
 
+    async def fetch_beacon_settings(self) -> BeaconSettings:
+        state = self._require_state()
+        state.beacon_settings = await self._conn.get_beacon_settings()
+        return state.beacon_settings
+
+    async def fetch_aprs_path(self) -> str:
+        """Read the APRS digipeater path. Not cached: the radio sends no event for it."""
+        self._require_state()
+        return await self._conn.get_aprs_path()
+
     async def write_channel(self, channel: Channel) -> None:
         state = self._require_state()
         await self._conn.set_channel(channel)
@@ -315,6 +325,16 @@ class RadioController:
         state = self._require_state()
         await self._conn.set_settings(settings)
         state.settings = settings
+
+    async def write_beacon_settings(self, beacon_settings: BeaconSettings) -> None:
+        state = self._require_state()
+        await self._conn.set_beacon_settings(beacon_settings)
+        state.beacon_settings = beacon_settings
+
+    async def write_aprs_path(self, path: str) -> None:
+        """Write the APRS digipeater path (comma-separated, e.g. "WIDE1-1,WIDE2-1")."""
+        self._require_state()
+        await self._conn.set_aprs_path(path)
 
     def _require_state(self) -> _RadioState:
         if self._state is None:

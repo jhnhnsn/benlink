@@ -165,6 +165,19 @@ class CommandConnection:
         if isinstance(reply, MessageReplyError):
             raise reply.as_exception()
 
+    async def get_aprs_path(self) -> str:
+        """Get the APRS digipeater path (comma-separated, e.g. "WIDE1-1,WIDE2-1")"""
+        reply = await self.send_message_expect_reply(GetAprsPath(), GetAprsPathReply)
+        if isinstance(reply, MessageReplyError):
+            raise reply.as_exception()
+        return reply.path
+
+    async def set_aprs_path(self, path: str):
+        """Set the APRS digipeater path (comma-separated, e.g. "WIDE1-1,WIDE2-1")"""
+        reply = await self.send_message_expect_reply(SetAprsPath(path), SetAprsPathReply)
+        if isinstance(reply, MessageReplyError):
+            raise reply.as_exception()
+
     async def get_battery_level(self) -> int:
         """Get the battery level"""
         reply = await self.send_message_expect_reply(GetBatteryLevel(), GetBatteryLevelReply)
@@ -298,6 +311,20 @@ def command_message_to_protocol(m: CommandMessage) -> p.Message:
                     bss_settings=packet_settings.to_protocol()
                 )
             )
+        case GetAprsPath():
+            return p.Message(
+                command_group=p.CommandGroup.BASIC,
+                is_reply=False,
+                command=p.BasicCommand.GET_APRS_PATH,
+                body=p.GetAprsPathBody()
+            )
+        case SetAprsPath(path):
+            return p.Message(
+                command_group=p.CommandGroup.BASIC,
+                is_reply=False,
+                command=p.BasicCommand.SET_APRS_PATH,
+                body=p.SetAprsPathBody(path=path.encode("utf-8"))
+            )
         case GetSettings():
             return p.Message(
                 command_group=p.CommandGroup.BASIC,
@@ -426,6 +453,25 @@ def radio_message_from_protocol(mf: p.Message) -> RadioMessage:
                 )
 
             return GetBeaconSettingsReply(BeaconSettings.from_protocol(bss_settings))
+        case p.GetAprsPathReplyBody(
+            reply_status=reply_status,
+            path=path,
+        ):
+            if reply_status != p.ReplyStatus.SUCCESS:
+                return MessageReplyError(
+                    message_type=GetAprsPathReply,
+                    reason=reply_status.name,
+                )
+            return GetAprsPathReply(path.split(b"\0", 1)[0].decode("utf-8", errors="replace").strip())
+        case p.SetAprsPathReplyBody(
+            reply_status=reply_status,
+        ):
+            if reply_status != p.ReplyStatus.SUCCESS:
+                return MessageReplyError(
+                    message_type=SetAprsPathReply,
+                    reason=reply_status.name,
+                )
+            return SetAprsPathReply()
         case p.WriteBSSSettingsReplyBody(
             reply_status=reply_status,
         ):
@@ -612,6 +658,14 @@ class SendTncDataFragment(t.NamedTuple):
     tnc_data_fragment: TncDataFragment
 
 
+class GetAprsPath(t.NamedTuple):
+    pass
+
+
+class SetAprsPath(t.NamedTuple):
+    path: str
+
+
 CommandMessage = t.Union[
     GetBeaconSettings,
     SetBeaconSettings,
@@ -628,6 +682,8 @@ CommandMessage = t.Union[
     EnableEvent,
     GetStatus,
     GetPosition,
+    GetAprsPath,
+    SetAprsPath,
 ]
 
 #####################
@@ -690,6 +746,14 @@ class GetPositionReply(t.NamedTuple):
     position: Position
 
 
+class GetAprsPathReply(t.NamedTuple):
+    path: str
+
+
+class SetAprsPathReply(t.NamedTuple):
+    pass
+
+
 ReplyStatus = t.Literal[
     "SUCCESS",
     "NOT_SUPPORTED",
@@ -725,6 +789,8 @@ ReplyMessage = t.Union[
     SendTncDataFragmentReply,
     GetStatusReply,
     GetPositionReply,
+    GetAprsPathReply,
+    SetAprsPathReply,
     MessageReplyError,
 ]
 
@@ -1303,10 +1369,26 @@ class BeaconSettingsArgs(t.TypedDict, total=False):
     beacon_message: str
     aprs_symbol: str
     aprs_callsign: str
+    smart_beacon_en: bool
+    mic_e_en: bool
+    send_id_by_aprs: bool
+    smart_beacon_min_interval: int | None
+    smart_beacon_max_interval: int | None
 
 
 class BeaconSettings(ImmutableBaseModel):
-    """A data object representing the beacon settings"""
+    """A data object representing the beacon settings
+
+    The radio sends one of two record sizes, chosen by its firmware: 50 bytes,
+    or 52 bytes with the smart beacon intervals. `smart_beacon_min_interval` and
+    `smart_beacon_max_interval` are None for a 50-byte record, and a write uses
+    the same size as the record it came from: 52 bytes when either interval is
+    set, else 50 bytes.
+
+    `reserved_0`, `reserved_1` and `reserved_2` hold record bits whose meaning
+    is not known; they are kept so that a read, then a write, changes nothing
+    the caller did not change.
+    """
     _bss_user_id_split: t.ClassVar[IntSplit] = IntSplit(32, 32)
     max_fwd_times: int
     time_to_live: int
@@ -1324,10 +1406,19 @@ class BeaconSettings(ImmutableBaseModel):
     beacon_message: str
     aprs_symbol: str
     aprs_callsign: str
+    smart_beacon_en: bool = False
+    mic_e_en: bool = False
+    send_id_by_aprs: bool = False
+    smart_beacon_min_interval: int | None = None
+    smart_beacon_max_interval: int | None = None
+    reserved_0: bool = False
+    reserved_1: int = 0
+    reserved_2: int = 0
 
     @classmethod
     def from_protocol(cls, bs: p.BSSSettingsV2 | p.BSSSettings) -> BeaconSettings:
         """@private (Protocol helper)"""
+        v2 = isinstance(bs, p.BSSSettingsV2)
         return BeaconSettings(
             max_fwd_times=bs.max_fwd_times,
             time_to_live=bs.time_to_live,
@@ -1346,12 +1437,20 @@ class BeaconSettings(ImmutableBaseModel):
             ptt_release_id_info=bs.ptt_release_id_info,
             beacon_message=bs.beacon_message,
             aprs_symbol=bs.aprs_symbol,
-            aprs_callsign=bs.aprs_callsign
+            aprs_callsign=bs.aprs_callsign,
+            smart_beacon_en=bs.smart_beacon_en,
+            mic_e_en=bs.mic_e_en,
+            send_id_by_aprs=bs.send_id_by_aprs,
+            smart_beacon_min_interval=bs.smart_beacon_min_interval if v2 else None,
+            smart_beacon_max_interval=bs.smart_beacon_max_interval if v2 else None,
+            reserved_0=bs._unk_bss_0,
+            reserved_1=bs._unk_bss_1,
+            reserved_2=bs._unk_bss_2 if v2 else 0,
         )
 
-    def to_protocol(self) -> p.BSSSettingsV2:
+    def to_protocol(self) -> p.BSSSettingsV2 | p.BSSSettings:
         """@private (Protocol helper)"""
-        return p.BSSSettingsV2(
+        common = dict(
             max_fwd_times=self.max_fwd_times,
             time_to_live=self.time_to_live,
             ptt_release_send_location=self.ptt_release_send_location,
@@ -1361,7 +1460,12 @@ class BeaconSettings(ImmutableBaseModel):
             send_pwr_voltage=self.send_pwr_voltage,
             packet_format=p.PacketFormat[self.packet_format],
             allow_position_check=self.allow_position_check,
+            _unk_bss_0=self.reserved_0,
             aprs_ssid=self.aprs_ssid,
+            smart_beacon_en=self.smart_beacon_en,
+            mic_e_en=self.mic_e_en,
+            send_id_by_aprs=self.send_id_by_aprs,
+            _unk_bss_1=self.reserved_1,
             location_share_interval=self.location_share_interval,
             bss_user_id_lower=self._bss_user_id_split.get_lower(
                 self.bss_user_id
@@ -1373,6 +1477,14 @@ class BeaconSettings(ImmutableBaseModel):
             bss_user_id_upper=self._bss_user_id_split.get_upper(
                 self.bss_user_id
             ),
+        )
+        if self.smart_beacon_min_interval is None and self.smart_beacon_max_interval is None:
+            return p.BSSSettings(**common)
+        return p.BSSSettingsV2(
+            **common,
+            smart_beacon_min_interval=self.smart_beacon_min_interval or 0,
+            smart_beacon_max_interval=self.smart_beacon_max_interval or 0,
+            _unk_bss_2=self.reserved_2,
         )
 
 

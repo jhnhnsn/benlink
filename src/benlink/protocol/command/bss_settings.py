@@ -48,7 +48,7 @@ class BSSSettings(Bitfield):
 class BSSSettingsV2(BSSSettings):
     # App gates on soft_ver from DevInfo to pick write size:
     # soft_ver < 50 -> 46 bytes, 50-135 -> 50 bytes (BSSSettings), >= 136 -> 52 bytes (BSSSettingsV2)
-    # to_protocol in command.py currently always writes BSSSettingsV2; should be conditioned on soft_ver
+    # BeaconSettings.to_protocol in command.py writes the size of the record it was read from
     smart_beacon_min_interval: int = bf_int(4, default=0)
     smart_beacon_max_interval: int = bf_int(5, default=0)
     _unk_bss_2: int = bf_int(7, default=0)

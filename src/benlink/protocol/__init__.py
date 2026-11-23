@@ -9,4 +9,5 @@ from .command.pf import *
 from .command.power_status import *
 from .command.status import *
 from .command.position import *
+from .command.aprs_path import *
 from .audio import *
