@@ -4,6 +4,7 @@ import socket
 import asyncio
 import logging
 from bleak import BleakClient
+from bleak.backends.device import BLEDevice
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from . import protocol as p
 from .protocol.command.bitfield import BitStream
@@ -47,8 +48,14 @@ class BleCommandLink:
     def is_connected(self) -> bool:
         return self._client.is_connected
 
-    def __init__(self, device_uuid: str):
-        self._client = BleakClient(device_uuid)
+    def __init__(
+        self,
+        device: str | BLEDevice,
+        disconnected_callback: t.Callable[[BleakClient], None] | None = None,
+    ):
+        """`device` is an address/UUID, or a BLEDevice (needed when a connected
+        radio no longer advertises, so a scan by address cannot find it)."""
+        self._client = BleakClient(device, disconnected_callback=disconnected_callback)
 
     async def send(self, msg: p.Message):
         await self.send_bytes(msg.to_bytes())

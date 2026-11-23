@@ -151,7 +151,11 @@ from dataclasses import dataclass
 import typing as t
 import logging
 
+from bleak import BleakClient
+from bleak.backends.device import BLEDevice
+
 from .command import (
+    DEFAULT_REPLY_TIMEOUT,
     CommandConnection,
     EventHandler,
     DeviceInfo,
@@ -194,8 +198,15 @@ class RadioController:
         self._state = None
 
     @classmethod
-    def new_ble(cls, device_uuid: str) -> RadioController:
-        return RadioController(CommandConnection.new_ble(device_uuid))
+    def new_ble(
+        cls,
+        device: str | BLEDevice,
+        disconnected_callback: t.Callable[[BleakClient], None] | None = None,
+        reply_timeout: float | None = DEFAULT_REPLY_TIMEOUT,
+    ) -> RadioController:
+        """`device`: address/UUID or a BLEDevice. `disconnected_callback` is called
+        by bleak if the link drops."""
+        return RadioController(CommandConnection.new_ble(device, disconnected_callback, reply_timeout))
 
     @classmethod
     def new_rfcomm(cls, device_uuid: str, channel: int | t.Literal["auto"] = "auto") -> RadioController:
@@ -273,6 +284,42 @@ class RadioController:
         await self._conn.set_channel(new_channel)
 
         self._state.channels[channel_id] = new_channel
+
+    # Fresh reads and whole-model writes. fetch_* read from the radio (not the
+    # cache) and update the cache; write_* write a complete model and update
+    # the cache with it. The radio does not always send an event after a write
+    # or a channel change, so callers that need the truth should fetch.
+
+    async def fetch_channel(self, channel_id: int) -> Channel:
+        state = self._require_state()
+        channel = await self._conn.get_channel(channel_id)
+        state.channels[channel_id] = channel
+        return channel
+
+    async def fetch_settings(self) -> Settings:
+        state = self._require_state()
+        state.settings = await self._conn.get_settings()
+        return state.settings
+
+    async def fetch_status(self) -> Status:
+        state = self._require_state()
+        state.status = await self._conn.get_status()
+        return state.status
+
+    async def write_channel(self, channel: Channel) -> None:
+        state = self._require_state()
+        await self._conn.set_channel(channel)
+        state.channels[channel.channel_id] = channel
+
+    async def write_settings(self, settings: Settings) -> None:
+        state = self._require_state()
+        await self._conn.set_settings(settings)
+        state.settings = settings
+
+    def _require_state(self) -> _RadioState:
+        if self._state is None:
+            raise StateNotInitializedError()
+        return self._state
 
     def is_connected(self) -> bool:
         return self._state is not None and self._conn.is_connected()

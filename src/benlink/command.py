@@ -38,6 +38,8 @@ import asyncio
 from pydantic import BaseModel, ConfigDict
 from . import protocol as p
 from .link import CommandLink, BleCommandLink, RfcommCommandLink
+from bleak import BleakClient
+from bleak.backends.device import BLEDevice
 from datetime import datetime
 
 RADIO_SERVICE_UUID = "00001100-d102-11e1-9b23-00025b00a5a5"
@@ -64,8 +66,13 @@ class CommandConnection:
         self._reply_timeout = reply_timeout
 
     @classmethod
-    def new_ble(cls, device_uuid: str) -> CommandConnection:
-        return cls(BleCommandLink(device_uuid))
+    def new_ble(
+        cls,
+        device: str | BLEDevice,
+        disconnected_callback: t.Callable[[BleakClient], None] | None = None,
+        reply_timeout: float | None = DEFAULT_REPLY_TIMEOUT,
+    ) -> CommandConnection:
+        return cls(BleCommandLink(device, disconnected_callback), reply_timeout)
 
     @classmethod
     def new_rfcomm(cls, device_uuid: str, channel: int | t.Literal["auto"] = "auto") -> CommandConnection:

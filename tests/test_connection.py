@@ -51,3 +51,28 @@ def test_getsettings_message_is_sent():
         assert link.sent and link.sent[0].command == p.BasicCommand.READ_SETTINGS
 
     asyncio.run(go())
+
+
+def test_ble_link_accepts_a_bledevice_and_disconnect_callback():
+    from bleak.backends.device import BLEDevice
+
+    from benlink.controller import RadioController
+
+    seen = []
+    dev = BLEDevice("00:11:22:33:44:55", "UV-PRO", {"path": "/org/bluez/hci0/dev_00_11_22_33_44_55", "props": {}})
+    radio = RadioController.new_ble(dev, disconnected_callback=seen.append, reply_timeout=5)
+    link = radio._conn._link
+    assert link._client.address == "00:11:22:33:44:55"
+    assert radio._conn._reply_timeout == 5
+
+
+def test_fetch_and_write_need_a_connected_radio():
+    from benlink.controller import RadioController, StateNotInitializedError
+
+    radio = RadioController(CommandConnection(SilentLink()))
+
+    async def go():
+        with pytest.raises(StateNotInitializedError):
+            await radio.fetch_settings()
+
+    asyncio.run(go())
