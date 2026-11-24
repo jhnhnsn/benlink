@@ -36,6 +36,12 @@ from .aprs_path import (
     SetAprsPathBody,
     SetAprsPathReplyBody,
 )
+from .volume import (
+    GetVolumeBody,
+    GetVolumeReplyBody,
+    SetVolumeBody,
+    SetVolumeReplyBody,
+)
 
 
 class CommandGroup(IntEnum):
@@ -194,6 +200,10 @@ def body_disc(m: Message, n: int):
                     out = GetAprsPathReplyBody if m.is_reply else GetAprsPathBody
                 case BasicCommand.SET_APRS_PATH:
                     out = SetAprsPathReplyBody if m.is_reply else SetAprsPathBody
+                case BasicCommand.GET_VOLUME:
+                    out = GetVolumeReplyBody if m.is_reply else GetVolumeBody
+                case BasicCommand.SET_VOLUME:
+                    out = SetVolumeReplyBody if m.is_reply else SetVolumeBody
                 case _:
                     return bf_bytes(n // 8)
         case CommandGroup.EXTENDED:
@@ -237,6 +247,10 @@ MessageBody = t.Union[
     GetAprsPathReplyBody,
     SetAprsPathBody,
     SetAprsPathReplyBody,
+    GetVolumeBody,
+    GetVolumeReplyBody,
+    SetVolumeBody,
+    SetVolumeReplyBody,
 ]
 
 

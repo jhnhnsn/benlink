@@ -316,6 +316,16 @@ class RadioController:
         self._require_state()
         return await self._conn.get_aprs_path()
 
+    async def fetch_volume(self) -> int:
+        """Read the volume level (0-15). Not cached: the volume knob sends no event."""
+        self._require_state()
+        return await self._conn.get_volume()
+
+    async def write_volume(self, level: int) -> None:
+        """Write the volume level (0-15)."""
+        self._require_state()
+        await self._conn.set_volume(level)
+
     async def write_channel(self, channel: Channel) -> None:
         state = self._require_state()
         await self._conn.set_channel(channel)

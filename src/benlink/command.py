@@ -178,6 +178,21 @@ class CommandConnection:
         if isinstance(reply, MessageReplyError):
             raise reply.as_exception()
 
+    async def get_volume(self) -> int:
+        """Get the volume level (0-15)"""
+        reply = await self.send_message_expect_reply(GetVolume(), GetVolumeReply)
+        if isinstance(reply, MessageReplyError):
+            raise reply.as_exception()
+        return reply.level
+
+    async def set_volume(self, level: int):
+        """Set the volume level (0-15)"""
+        if not 0 <= level <= 15:
+            raise ValueError(f"volume level must be 0-15, got {level}")
+        reply = await self.send_message_expect_reply(SetVolume(level), SetVolumeReply)
+        if isinstance(reply, MessageReplyError):
+            raise reply.as_exception()
+
     async def get_battery_level(self) -> int:
         """Get the battery level"""
         reply = await self.send_message_expect_reply(GetBatteryLevel(), GetBatteryLevelReply)
@@ -324,6 +339,20 @@ def command_message_to_protocol(m: CommandMessage) -> p.Message:
                 is_reply=False,
                 command=p.BasicCommand.SET_APRS_PATH,
                 body=p.SetAprsPathBody(path=path.encode("utf-8"))
+            )
+        case GetVolume():
+            return p.Message(
+                command_group=p.CommandGroup.BASIC,
+                is_reply=False,
+                command=p.BasicCommand.GET_VOLUME,
+                body=p.GetVolumeBody()
+            )
+        case SetVolume(level):
+            return p.Message(
+                command_group=p.CommandGroup.BASIC,
+                is_reply=False,
+                command=p.BasicCommand.SET_VOLUME,
+                body=p.SetVolumeBody(level=level)
             )
         case GetSettings():
             return p.Message(
@@ -472,6 +501,30 @@ def radio_message_from_protocol(mf: p.Message) -> RadioMessage:
                     reason=reply_status.name,
                 )
             return SetAprsPathReply()
+        case p.GetVolumeReplyBody(
+            reply_status=reply_status,
+            level=level,
+        ):
+            if reply_status != p.ReplyStatus.SUCCESS:
+                return MessageReplyError(
+                    message_type=GetVolumeReply,
+                    reason=reply_status.name,
+                )
+            if not level:
+                return MessageReplyError(
+                    message_type=GetVolumeReply,
+                    reason="INVALID_PARAMETER",
+                )
+            return GetVolumeReply(level[0])
+        case p.SetVolumeReplyBody(
+            reply_status=reply_status,
+        ):
+            if reply_status != p.ReplyStatus.SUCCESS:
+                return MessageReplyError(
+                    message_type=SetVolumeReply,
+                    reason=reply_status.name,
+                )
+            return SetVolumeReply()
         case p.WriteBSSSettingsReplyBody(
             reply_status=reply_status,
         ):
@@ -666,6 +719,14 @@ class SetAprsPath(t.NamedTuple):
     path: str
 
 
+class GetVolume(t.NamedTuple):
+    pass
+
+
+class SetVolume(t.NamedTuple):
+    level: int
+
+
 CommandMessage = t.Union[
     GetBeaconSettings,
     SetBeaconSettings,
@@ -684,6 +745,8 @@ CommandMessage = t.Union[
     GetPosition,
     GetAprsPath,
     SetAprsPath,
+    GetVolume,
+    SetVolume,
 ]
 
 #####################
@@ -754,6 +817,14 @@ class SetAprsPathReply(t.NamedTuple):
     pass
 
 
+class GetVolumeReply(t.NamedTuple):
+    level: int
+
+
+class SetVolumeReply(t.NamedTuple):
+    pass
+
+
 ReplyStatus = t.Literal[
     "SUCCESS",
     "NOT_SUPPORTED",
@@ -791,6 +862,8 @@ ReplyMessage = t.Union[
     GetPositionReply,
     GetAprsPathReply,
     SetAprsPathReply,
+    GetVolumeReply,
+    SetVolumeReply,
     MessageReplyError,
 ]
 
